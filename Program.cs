@@ -14,56 +14,58 @@ var app = builder.Build();
 
 var dataSource = app.Services.GetRequiredService<NpgsqlDataSource>();
 await using (var create = dataSource.CreateCommand(
-    "CREATE TABLE IF NOT EXISTS tasks (id SERIAL PRIMARY KEY, title TEXT NOT NULL, done BOOLEAN NOT NULL DEFAULT FALSE)"))
+    "CREATE TABLE IF NOT EXISTS games (id SERIAL PRIMARY KEY, title TEXT NOT NULL, genre TEXT NOT NULL, available BOOLEAN NOT NULL DEFAULT TRUE)"))
 {
     await create.ExecuteNonQueryAsync();
 }
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
-app.MapGet("/tasks", async (NpgsqlDataSource db) =>
+app.MapGet("/games", async (NpgsqlDataSource db) =>
 {
-    var list = new List<TaskItem>();
-    await using var cmd = db.CreateCommand("SELECT id, title, done FROM tasks ORDER BY id");
+    var list = new List<GameItem>();
+    await using var cmd = db.CreateCommand("SELECT id, title, genre, available FROM games ORDER BY id");
     await using var reader = await cmd.ExecuteReaderAsync();
     while (await reader.ReadAsync())
     {
-        list.Add(new TaskItem(reader.GetInt32(0), reader.GetString(1), reader.GetBoolean(2)));
+        list.Add(new GameItem(reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetBoolean(3)));
     }
     return Results.Ok(list);
 });
 
-app.MapGet("/tasks/{id:int}", async (int id, NpgsqlDataSource db) =>
+app.MapGet("/games/{id:int}", async (int id, NpgsqlDataSource db) =>
 {
-    await using var cmd = db.CreateCommand("SELECT id, title, done FROM tasks WHERE id = $1");
+    await using var cmd = db.CreateCommand("SELECT id, title, genre, available FROM games WHERE id = $1");
     cmd.Parameters.AddWithValue(id);
     await using var reader = await cmd.ExecuteReaderAsync();
     if (!await reader.ReadAsync()) return Results.NotFound();
-    return Results.Ok(new TaskItem(reader.GetInt32(0), reader.GetString(1), reader.GetBoolean(2)));
+    return Results.Ok(new GameItem(reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetBoolean(3)));
 });
 
-app.MapPost("/tasks", async (TaskInput input, NpgsqlDataSource db) =>
+app.MapPost("/games", async (GameInput input, NpgsqlDataSource db) =>
 {
-    await using var cmd = db.CreateCommand("INSERT INTO tasks (title, done) VALUES ($1, $2) RETURNING id");
+    await using var cmd = db.CreateCommand("INSERT INTO games (title, genre, available) VALUES ($1, $2, $3) RETURNING id");
     cmd.Parameters.AddWithValue(input.Title);
-    cmd.Parameters.AddWithValue(input.Done);
+    cmd.Parameters.AddWithValue(input.Genre);
+    cmd.Parameters.AddWithValue(input.Available);
     var id = (int)(await cmd.ExecuteScalarAsync());
-    return Results.Created($"/tasks/{id}", new TaskItem(id, input.Title, input.Done));
+    return Results.Created($"/games/{id}", new GameItem(id, input.Title, input.Genre, input.Available));
 });
 
-app.MapPut("/tasks/{id:int}", async (int id, TaskInput input, NpgsqlDataSource db) =>
+app.MapPut("/games/{id:int}", async (int id, GameInput input, NpgsqlDataSource db) =>
 {
-    await using var cmd = db.CreateCommand("UPDATE tasks SET title = $1, done = $2 WHERE id = $3");
+    await using var cmd = db.CreateCommand("UPDATE games SET title = $1, genre = $2, available = $3 WHERE id = $4");
     cmd.Parameters.AddWithValue(input.Title);
-    cmd.Parameters.AddWithValue(input.Done);
+    cmd.Parameters.AddWithValue(input.Genre);
+    cmd.Parameters.AddWithValue(input.Available);
     cmd.Parameters.AddWithValue(id);
     var rows = await cmd.ExecuteNonQueryAsync();
-    return rows == 0 ? Results.NotFound() : Results.Ok(new TaskItem(id, input.Title, input.Done));
+    return rows == 0 ? Results.NotFound() : Results.Ok(new GameItem(id, input.Title, input.Genre, input.Available));
 });
 
-app.MapDelete("/tasks/{id:int}", async (int id, NpgsqlDataSource db) =>
+app.MapDelete("/games/{id:int}", async (int id, NpgsqlDataSource db) =>
 {
-    await using var cmd = db.CreateCommand("DELETE FROM tasks WHERE id = $1");
+    await using var cmd = db.CreateCommand("DELETE FROM games WHERE id = $1");
     cmd.Parameters.AddWithValue(id);
     var rows = await cmd.ExecuteNonQueryAsync();
     return rows == 0 ? Results.NotFound() : Results.NoContent();
@@ -71,5 +73,5 @@ app.MapDelete("/tasks/{id:int}", async (int id, NpgsqlDataSource db) =>
 
 app.Run();
 
-record TaskItem(int Id, string Title, bool Done);
-record TaskInput(string Title, bool Done);
+record GameItem(int Id, string Title, string Genre, bool Available);
+record GameInput(string Title, string Genre, bool Available);
